@@ -1,15 +1,27 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' as r;
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 
-void main() {
+late ui.Image _animeGirls;
+Future<void> _loadAnimeGirlsImg() async {
+  final img = await ui.ImageDescriptor.encoded(
+    await ImmutableBuffer.fromAsset("images/anime2.jpeg"));
+  final codec = await img.instantiateCodec();
+  final nf = await codec.getNextFrame();
+  _animeGirls = nf.image;
+}
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final sb = ServicesBinding.instance;
   sb.requestPerformanceMode(ui.DartPerformanceMode.balanced);
+  await _loadAnimeGirlsImg();
   runApp(const MyApp());
 }
 
@@ -25,11 +37,367 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const Scaffold(
-        body: MyAppIntermidiary(),
+        body:  App() // MyAppIntermidiary()
       ),
     );
   }
 }
+
+class App extends StatefulWidget {
+  const App({super.key});
+  @override
+  State<StatefulWidget> createState() {
+    return AppState();
+  }
+}
+enum SelectedView {
+  intro, folderview
+}
+class AppState extends State<App> {
+
+  late Directory _dir;
+  late String? _dirpath;
+  bool hovered = false;
+  String msg = "Drop a folder here, or click this button";
+  SelectedView _selectedView = SelectedView.intro;
+
+  void _getDir() async {
+    _dirpath =  await getDirectoryPath();
+  }
+  void _openDir() {
+    if (_dirpath == null) return;
+    _dir = Directory(_dirpath!);
+    _dir.exists().then((ok) {
+      setState(() {
+        if (ok) {
+          _selectedView = SelectedView.folderview;
+        } else {
+          msg = "That wasnt a folder...   ~_~";
+        }
+      });
+    });
+  }
+  @override
+  Widget build(BuildContext context) {
+    switch (_selectedView) {
+      case SelectedView.intro:
+        return _introView;
+      case SelectedView.folderview:
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            _bg,
+            // _dirItemsView
+            FolderStructureView(_dir)
+          ]
+        );
+    }
+  }
+  Widget get _bg => DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+    Colors.blueGrey.shade400,
+    Colors.blueGrey.shade700
+  ])));
+
+  // Widget _dirItemView(
+  //   FileSystemEntity fse
+  // ) {
+  //   String name = "";
+  //   switch (fse) {
+  //     case Directory dir:
+  //       name = dir.path;
+  //     case File file:
+  //       name = file.path;
+  //     case Link link:
+  //       name = link.path;
+  //   }
+  //   return Row(children: [
+  //     Text(name)
+  //   ],);
+  // }
+
+  // Widget get _dirItemsView  => ListView(
+  //   children:
+  //   _dirContent.map(_dirItemView).toList(),
+  // );
+
+  Widget get _introView => DropTarget(
+    onDragDone: (details) {
+      if (details.files.length != 1) {
+        setState(() {
+          msg = "That wasnt a folder...   ~_~";
+        });
+        return;
+      }
+      _dirpath = details.files.first.path;
+      _openDir();
+    },
+    child: Stack(
+      fit: StackFit.expand,
+      alignment: Alignment.topLeft,
+      children: [
+        CustomPaint(painter: BGPaint(),),
+        Center(child: MouseRegion(
+          onEnter: (event) {
+            setState(() {
+              hovered = true;
+            });
+          },
+          onExit: (event) {
+            setState(() {
+              hovered = false;
+            });
+          },
+          child: GestureDetector(
+            onTap: _getDir,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: hovered ? [
+                    Colors.blueGrey.shade600,
+                    Colors.blueGrey.shade900
+                  ] : [
+                    Colors.blueGrey.shade400,
+                    Colors.blueGrey.shade700
+                  ]
+                ),
+                borderRadius: const BorderRadius.all(Radius.circular(10)),
+                boxShadow: const [
+                  BoxShadow(spreadRadius: 20, blurRadius: 30, color: Colors.blueGrey)
+                ],
+                border: Border.all(color: Colors.blueGrey.shade900)
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.snippet_folder),
+                    Text(
+                      msg,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ))
+      ],),
+  );
+}
+class BGPaint extends CustomPainter {
+  BGPaint() ;
+
+  @override
+  void paint(ui.Canvas canvas, ui.Size size) {
+    canvas.drawPaint(
+      Paint()..shader=ui.Gradient.linear(
+        Offset.zero, Offset(0, size.height), [
+          Colors.blueGrey.shade300,
+          Colors.blueGrey,
+        ]));
+    var w = _animeGirls.width.toDouble();
+    double dx = 0;
+    if (w > size.width) {
+      dx = (w - size.width) / 2;
+      w = size.width;
+    }
+    var h = _animeGirls.height.toDouble();
+    double dy = 0;
+    if (h > size.height) {
+      dy = (h - size.height) / 2;
+      h = size.height;
+    }
+    canvas.drawImageRect(
+      _animeGirls,
+      Offset(dx, dy) &
+      Size(w, h),
+      Offset.zero & size,
+      Paint()
+      // ..imageFilter=ui.ImageFilter.dilate(radiusX: 1,radiusY: 1)
+      // ui.ImageFilter.compose(
+      //   outer: ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+      //   inner: ui.ImageFilter.dilate(radiusX: 5,radiusY: 5)
+      // )
+      ..blendMode=BlendMode.colorDodge
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
+  }
+}
+class Box<T> {
+  Box(this.value);
+  T value;
+}
+sealed class SomeDirStructure {}
+class FSItem extends SomeDirStructure {
+  FSItem(this.item);
+  FileSystemEntity item;
+}
+class OpenedFolder extends SomeDirStructure {
+  OpenedFolder(this.items, this.directory);
+  Directory directory;
+  List<Box<SomeDirStructure>> items;
+}
+class FolderStructureView extends LeafRenderObjectWidget {
+  const FolderStructureView(this._directory, {super.key});
+  final Directory _directory;
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return FolderStructureViewImpl(_directory);
+  }
+}
+class FolderStructureViewImpl extends RenderBox {
+  FolderStructureViewImpl(this._directory) {
+    final l = _directory.listSync().map((e) => Box(FSItem(e))).toList();
+    _limit = l.length + 1;
+    _dirStructure = Box(OpenedFolder(l, _directory));
+    _textPainter.text = const TextSpan(text: " ");
+    _textPainter.layout();
+    _lineHeight = _textPainter.height;
+
+    _keyboard.addHandler((e){
+      _handleKey(e);
+      return false;
+    });
+  }
+
+  final Directory _directory;
+  late Box<SomeDirStructure> _dirStructure;
+  int _currentLine = 0;
+  late int _limit;
+  final HardwareKeyboard _keyboard = HardwareKeyboard.instance;
+  final TextPainter _textPainter = TextPainter(textDirection: TextDirection.ltr);
+  late double _lineHeight;
+
+  void _handleKey(KeyEvent ke) {
+    switch (ke) {
+      case KeyDownEvent kde:
+        switch (kde.logicalKey) {
+          case LogicalKeyboardKey.enter:
+            _openUnderCursor(_currentLine, _dirStructure);
+            break;
+          case LogicalKeyboardKey.arrowDown:
+            if (_currentLine + 1 == _limit) return;
+            _currentLine += 1;
+            break;
+          case LogicalKeyboardKey.arrowUp:
+            if (_currentLine == 0) return;
+            _currentLine -= 1;
+            break;
+        }
+        markNeedsPaint();
+        break;
+      case KeyRepeatEvent kre:
+        switch (kre.logicalKey) {
+          case LogicalKeyboardKey.arrowDown:
+            if (_currentLine + 1 == _limit) return;
+            _currentLine += 1;
+            break;
+          case LogicalKeyboardKey.arrowUp:
+            if (_currentLine == 0) return;
+            _currentLine -= 1;
+            break;
+        }
+        markNeedsPaint();
+        break;
+      default:
+        break;
+    }
+  }
+  int? _openUnderCursor(
+    int cursor,
+    Box<SomeDirStructure> structure
+  ) {
+    switch (structure.value) {
+      case FSItem item:
+        switch (item.item) {
+          case Directory dir:
+            if (cursor != 0) return cursor;
+            List<Box<SomeDirStructure>> moreItems =
+              dir.listSync().map((i) => Box<SomeDirStructure>(FSItem(i))).toList();
+            _limit += moreItems.length;
+            structure.value = OpenedFolder(moreItems, dir);
+            markNeedsPaint();
+            return null;
+          case File _:
+          case Link _:
+          default:
+            return cursor;
+        }
+      case OpenedFolder items:
+        var cursor_ = cursor;
+        final iter = items.items.iterator;
+        while (true) {
+          if (cursor_ == 0) return null;
+          final hasElem = iter.moveNext();
+          if (!hasElem) { return cursor_; }
+          var item_ = iter.current;
+          final out = _openUnderCursor(cursor_ - 1, item_);
+          if (out == null) return null;
+          cursor_ = out;
+        }
+      default:
+        return null;
+    }
+  }
+  @override
+  void performLayout() {
+    final cons = constraints.normalize();
+    size = Size(cons.maxWidth, cons.maxHeight);
+  }
+  @override
+  void paint(PaintingContext context, ui.Offset offset) {
+
+    context.canvas.drawRect(
+      Offset(0, (_currentLine) * _lineHeight) &
+      Size(size.width, _lineHeight),
+      Paint()..color=Colors.blueGrey.shade900);
+
+    var ln = 0;
+    const off = 10.0;
+    var xoff = 0.0;
+    void drawComps(Box<SomeDirStructure> dirStructure) {
+      switch (dirStructure.value) {
+        case FSItem item:
+          String name;
+          if (item.item is Directory) {
+            final ps = item.item.uri.pathSegments;
+            name = ps[ps.length - 2];
+            name = "$name/";
+          } else {
+            name = item.item.uri.pathSegments.last;
+          }
+          _textPainter.text = TextSpan(text: name);
+          _textPainter.layout();
+          _textPainter.paint(context.canvas, Offset(xoff, ln * _lineHeight));
+          ln += 1;
+          break;
+        case OpenedFolder folder:
+          _textPainter.text = TextSpan(text: folder.directory.path);
+          _textPainter.layout();
+          _textPainter.paint(context.canvas, Offset.zero);
+          xoff += off;
+          ln += 1;
+          for (final item in folder.items) {
+            drawComps(item);
+          }
+          xoff -= off;
+      }
+    }
+    drawComps(_dirStructure);
+  }
+}
+
 class MyAppIntermidiary extends StatefulWidget {
   const MyAppIntermidiary({super.key});
   @override
@@ -37,9 +405,8 @@ class MyAppIntermidiary extends StatefulWidget {
     return MyAppIntermidiaryState();
   }
 }
-class MyAppIntermidiaryState
-  extends State<MyAppIntermidiary>
-  with TickerProviderStateMixin
+class MyAppIntermidiaryState extends State<MyAppIntermidiary>
+                             with TickerProviderStateMixin
 {
 
   @override
@@ -57,22 +424,49 @@ enum WordJumpDirection {
 enum LineEditHint {
   characterAdded, characterErased
 }
-class TextEditorView extends LeafRenderObjectWidget {
+enum TextEditorViewItem {
+  overtab
+}
+class TextEditorView
+// extends SlottedMultiChildRenderObjectWidget<TextEditorViewItem, RenderBox>
+extends LeafRenderObjectWidget
+{
   const TextEditorView(this.vsyncer, {super.key});
   final TickerProvider vsyncer;
+
+  final Widget k = const ColoredBox(color: Colors.black);
+
   @override
-  RenderObject createRenderObject(BuildContext context) {
-    var pointerEventListener = r.RenderPointerListener(
-      behavior: HitTestBehavior.opaque,
-    );
-    var child = TextEditorViewImpl(pointerEventListener, vsyncer);
-    pointerEventListener.child = child;
-    return pointerEventListener;
+  // SlottedContainerRenderObjectMixin<TextEditorViewItem, RenderBox>
+  RenderObject
+  createRenderObject(BuildContext context) {
+    return TextEditorViewImpl(vsyncer);
   }
+
+  // @override
+  // Widget? childForSlot(TextEditorViewItem slot) {
+  //   switch (slot) {
+  //     case TextEditorViewItem.overtab:
+  //       return k;
+  //   }
+  // }
+
+  // @override
+  // Iterable<TextEditorViewItem> get slots => TextEditorViewItem.values;
 }
-final class TextEditorViewImpl extends RenderBox  {
+
+final class SemanticError {
+  SemanticError(this.lineNumber, this.message);
+
+  int lineNumber;
+  String message;
+  bool fresh = true;
+}
+
+class TextEditorViewImpl extends RenderBox
+// with SlottedContainerRenderObjectMixin<TextEditorViewItem, r.RenderPointerListener>
+{
   TextEditorViewImpl(
-    this._pointerListener,
     this._vsyncer,
     {
       bool carretShouldBlink = false
@@ -81,60 +475,44 @@ final class TextEditorViewImpl extends RenderBox  {
     _keyboard = HardwareKeyboard.instance,
     _carretShouldBlink = carretShouldBlink
   {
-    _pointerListener.onPointerDown = (ev) {
-      if (!ev.down) return;
-      pointerDownForCarretMove(
-        Offset(ev.position.dx, ev.position.dy - _scrollOffset.dy));
-    };
-    _pointerListener.onPointerSignal = handlePointerEvent;
 
     _keyboard.addHandler((event) {
       handleKey(event);
       return false;
     });
-    _textPainter.text = TextSpan(text: " ", style: dts);
+    _textPainter.text = TextSpan(text: " ", style: _codeTextStyle);
     _textPainter.layout();
     _lineHeight = _textPainter.height;
     _characterWidth = _textPainter.width;
 
-    _animationController = AnimationController(
+    _carretBlinkingAnimationController = AnimationController(
       vsync: _vsyncer,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 200),
     );
 
-    _animationController.addListener(() {
-      _carretOpacity = _animationController.value;
-      markNeedsPaint();
-    });
     if (_carretShouldBlink) {
       activateCarretBlinking();
     }
+
     final rec = ui.PictureRecorder();
     final _ = Canvas(rec);
     _cachedTextLayer = rec.endRecording().toImageSync(1, 1);
-    // doesnt work 0_o
-    // _shortcutManager = ShortcutManager(shortcuts: {
-    //   LogicalKeySet(
-    //     LogicalKeyboardKey.control,
-    //     LogicalKeyboardKey.keyC,
-    //     LogicalKeyboardKey.keyB)
-    //   :
-    //   VoidCallbackIntent(() {
-    //     print("this");
-    //   }),
-    //   const SingleActivator(LogicalKeyboardKey.keyY, control: true)
-    //   :
-    //   VoidCallbackIntent(() {
-    //     print("that");
-    //   })
-    // });
+
+    _errorSlideAnimationController = AnimationController(
+      vsync: _vsyncer,
+      duration: const Duration(milliseconds: 500));
+    _errorSlideAnimation = CurvedAnimation(
+      parent: _errorSlideAnimationController,
+      curve: Curves.easeInOut);
+
+    _paintErrSign();
   }
 
-  // late final ShortcutManager _shortcutManager;
+
+  late final Animation _errorSlideAnimation;
   final bool _carretShouldBlink;
   final double _textSize = 13.5;
   Offset _scrollOffset = Offset.zero;
-  final r.RenderPointerListener _pointerListener;
   final HardwareKeyboard _keyboard;
   late double _lineHeight;
   final double _carretWidth = 2;
@@ -150,18 +528,25 @@ final class TextEditorViewImpl extends RenderBox  {
   double _carretOpacity = 1;
   Timer? _carretBlinkCycleTrigger;
   final fontFam = "Cascadia Code";
-  late final dts = TextStyle(
+  late final _codeTextStyle = TextStyle(
     color: Colors.black.withOpacity(0.7),
     fontSize: _textSize,
     fontFamily: fontFam
   );
-  late final ichts = TextStyle(
+  late final _invisiblesStyle = TextStyle(
     color: Colors.black26,
     fontSize: _textSize,
     fontFamily: fontFam
   );
+  late final _errTextStyle = TextStyle(
+    color: Colors.black87,
+    fontSize: _textSize,
+    fontFamily: fontFam,
+    fontStyle: FontStyle.italic
+  );
   final TickerProvider _vsyncer;
-  late AnimationController _animationController;
+  late AnimationController _carretBlinkingAnimationController;
+  late AnimationController _errorSlideAnimationController;
   (int charAnchor, int lineAnchor)? _selectionModeData;
   bool _pasteProceeding = false;
   final Color _lineUnderColor =
@@ -173,22 +558,101 @@ final class TextEditorViewImpl extends RenderBox  {
   final String _newLineChar = "⮧";
   final List<(String, String)> _invisibles = [
     ("\u0020", "•"),
-    ("\u000A", "\u2B92")
+    ("\u000A", "\u2B92"),
+    ("\u000B", "\u21A0")
   ];
   final String _jumpStoppers = " (){}.;=:_";
   late final Color _selectionBoxColor = _carretColor.withOpacity(0.1);
   final Radius _selectionBoxBorderRadius = const Radius.circular(3);
   late int _linesPerViewport;
+  double _errShowProgress = 0;
+  final List<SemanticError> _errors = [
+    SemanticError(0, "Your code sucks!"),
+    // SemanticError(2, "HUUUGE DICK!")
+  ];
+  final List<SemanticError> _visibleErrors = [];
+  late final ui.Image _errSign;
 
   int get _currentLineCharLimit =>
     _lines[_carretLineIndex].characters.length;
 
+  void _paintErrSign() {
+    final rec = ui.PictureRecorder();
+    final canvas = Canvas(rec);
+
+    final p = Path();
+    const w = 10.0;
+    const h = 10.0 * 4;
+    p.moveTo(0, 0); // tl
+    p.lineTo(w, 0); // tr
+    p.lineTo(w, h); // bl
+    p.lineTo(0, h); // br
+    p.lineTo(0, 0); // close
+    const dist = 8;
+    const smallH = 10.0;
+    const h2 = h + dist;
+    p.moveTo(0, h2); // tl
+    p.lineTo(w, h2); // tr
+    p.lineTo(w, h2 + smallH); // bl
+    p.lineTo(0, h2 + smallH); // br
+    p.lineTo(0, h2); // close
+
+    const circleSize = ((h2 + smallH) / 2) + 10;
+    canvas.drawCircle(
+      const Offset(circleSize, circleSize),
+      circleSize,
+      Paint()..shader=ui.Gradient.linear(Offset.zero, const Offset(0, circleSize), [
+        Colors.red.shade200, Colors.red.shade800
+      ]));
+
+    Paint paint = Paint()
+    ..color = Colors.white
+    ..strokeWidth = 1.0
+    ..style = PaintingStyle.fill
+    ..strokeJoin = StrokeJoin.round ;
+    const dx = circleSize - w / 2;
+    const dy = circleSize - (h2 + smallH) / 2;
+    canvas.drawPath(p.shift(const Offset(dx, dy)), paint);
+
+    final img = rec.endRecording().toImageSync(128, 128);
+    _errSign = img;
+  }
+  (int, int) _viewLinePortRange() {
+    final lineOff = (_scrollOffset.dy.abs() / _lineHeight).floor();
+    return (lineOff, lineOff + _linesPerViewport);
+  }
+  @override
+  bool hitTestSelf(ui.Offset position) {
+    return true;
+  }
+  @override
+  void handleEvent(PointerEvent event, covariant HitTestEntry<HitTestTarget> entry) {
+    assert(debugHandleEvent(event, entry));
+    switch (event) {
+      case PointerDownEvent pde:
+        pointerDownForCarretMove(
+          Offset(pde.localPosition.dx, pde.localPosition.dy - _scrollOffset.dy));
+        break;
+      case PointerScrollEvent pse:
+        handlePointerScrollEvent(pse);
+        break;
+      default:
+        return;
+    }
+  }
   void activateCarretBlinking() {
+    final anim = CurvedAnimation(
+      parent: _carretBlinkingAnimationController,
+      curve: Curves.bounceInOut);
+    anim.addListener(() {
+      _carretOpacity = anim.value;
+      markNeedsPaint();
+    });
     _carretBlinkCycleTrigger ??= Timer.periodic(
       const Duration(seconds: 1, milliseconds: 500),
       (_) async {
-        _animationController.reset();
-        await _animationController.forward();
+        _carretBlinkingAnimationController.reset();
+        await _carretBlinkingAnimationController.forward();
       }
     );
   }
@@ -224,20 +688,20 @@ final class TextEditorViewImpl extends RenderBox  {
         var matched = false;
         for (final (invch, subst) in _invisibles) {
           if (invch == char) {
-            _textPainter.text = TextSpan(text: subst, style: ichts);
+            _textPainter.text = TextSpan(text: subst, style: _invisiblesStyle);
             matched = true;
             break;
           }
         }
         if (!matched) {
-          _textPainter.text = TextSpan(text: char, style: dts);
+          _textPainter.text = TextSpan(text: char, style: _codeTextStyle);
         }
         _textPainter.layout();
         _textPainter.paint(canvasForText, Offset(dxOffset, lineNum * _lineHeight));
         dxOffset += _characterWidth;
       }
       if (lineNum != _lines.length - 1) {
-        _textPainter.text = TextSpan(text: "$_newLineChar\n", style: ichts);
+        _textPainter.text = TextSpan(text: "$_newLineChar\n", style: _invisiblesStyle);
         _textPainter.layout();
         _textPainter.paint(canvasForText, Offset(dxOffset, lineNum * _lineHeight));
       }
@@ -256,7 +720,7 @@ final class TextEditorViewImpl extends RenderBox  {
     // _shortcutManager.dispose();
     super.dispose();
   }
-  void handlePointerEvent(PointerSignalEvent pse) {
+  void handlePointerScrollEvent(PointerSignalEvent pse) {
     switch (pse) {
       case PointerScrollEvent pse:
         final off = pse.scrollDelta;
@@ -591,20 +1055,20 @@ final class TextEditorViewImpl extends RenderBox  {
         var matched = false;
         for (final (invch, subst) in _invisibles) {
           if (invch == char) {
-            _textPainter.text = TextSpan(text: subst, style: ichts);
+            _textPainter.text = TextSpan(text: subst, style: _invisiblesStyle);
             matched = true;
             break;
           }
         }
         if (!matched) {
-          _textPainter.text = TextSpan(text: char, style: dts);
+          _textPainter.text = TextSpan(text: char, style: _codeTextStyle);
         }
         _textPainter.layout();
         _textPainter.paint(canvas, Offset(dxOffset, lineNum * _lineHeight));
         dxOffset += _characterWidth;
       }
       if (lineNum != _lines.length - 1) {
-        _textPainter.text = TextSpan(text: "$_newLineChar\n", style: ichts);
+        _textPainter.text = TextSpan(text: "$_newLineChar\n", style: _invisiblesStyle);
         _textPainter.layout();
         _textPainter.paint(canvas, Offset(dxOffset, lineNum * _lineHeight));
       }
@@ -660,6 +1124,32 @@ final class TextEditorViewImpl extends RenderBox  {
         }
     }
   }
+  void _errSlideValBumper() {
+    _errShowProgress = _errorSlideAnimation.value;
+    markNeedsPaint();
+  }
+  void _handleErrorDisplay() async {
+    _visibleErrors.clear();
+    final (lo, hi) = _viewLinePortRange();
+    var runAnim = false;
+    for (final err in _errors) {
+      final ln = err.lineNumber;
+      if (ln >= lo && ln <= hi) {
+        _visibleErrors.add(err);
+        runAnim |= err.fresh;
+      }
+    }
+    _errShowProgress = 0;
+    if (runAnim) {
+      _errorSlideAnimation.addListener(_errSlideValBumper);
+      _errorSlideAnimationController.reset();
+      await _errorSlideAnimationController.forward();
+      _errorSlideAnimation.removeListener(_errSlideValBumper);
+      for (final ve in _visibleErrors) {
+        ve.fresh = false;
+      }
+    }
+  }
   void moveCarret(CarretMoveDirection cmd) {
     switch (cmd) {
       case CarretMoveDirection.up:
@@ -675,6 +1165,7 @@ final class TextEditorViewImpl extends RenderBox  {
           final off = _scrollOffset.dy + _lineHeight;
           _scrollOffset = Offset(_scrollOffset.dx, off);
         }
+        _handleErrorDisplay();
         return ;
       case CarretMoveDirection.down:
         if (_carretLineIndex + 1 == _lines.length) {
@@ -690,6 +1181,7 @@ final class TextEditorViewImpl extends RenderBox  {
           final off = _scrollOffset.dy - _lineHeight;
           _scrollOffset = Offset(_scrollOffset.dx, off);
         }
+        _handleErrorDisplay();
         return ;
       case CarretMoveDirection.left:
         if (_carretCharIndex == 0) {
@@ -801,19 +1293,21 @@ final class TextEditorViewImpl extends RenderBox  {
     final canvas = context.canvas;
     canvas.save();
     canvas.translate(_scrollOffset.dx, _scrollOffset.dy);
+    // background
     canvas.drawColor(
       _backgroundColor,
       BlendMode.src);
+    // line hint box
     canvas.drawRect(
       Offset(0, _carretLineIndex * _lineHeight) &
       Size(size.width, _lineHeight),
       Paint()..color=_lineUnderColor);
+    // text
     canvas.drawImage(
       _cachedTextLayer,
       Offset.zero,
       Paint());
-
-
+    // selected text
     if (_selectionModeData != null) {
       final selectionBoxPaint = Paint()..color=_selectionBoxColor;
       if (_selectionModeData!.$2 == _carretLineIndex) {
@@ -870,12 +1364,66 @@ final class TextEditorViewImpl extends RenderBox  {
         }
       }
     }
+    // err inline msg
+    if (_visibleErrors.isNotEmpty) {
+      for (final err in _visibleErrors) {
+        double prog ;
+        if (err.fresh) { prog = _errShowProgress; } else { prog = 1; }
 
+        _textPainter.text = TextSpan(
+          text: err.message,
+          style: _errTextStyle.copyWith(color: _errTextStyle.color!.withOpacity(prog))
+        );
+        const errBoxTrailingPad = 20;
+        final errSignWH = _lineHeight;
+        const trailingErrSignPadding = 0.0;
+        const leadingErrSignPadding = 5.0;
+        final textOnLineLen =
+          (_lines[err.lineNumber].characters.length + 1) * _characterWidth;
+        final decorWidth =
+          leadingErrSignPadding + errSignWH + trailingErrSignPadding + errBoxTrailingPad;
+        final maxSpaceOnLineForErrMsg =
+          size.width - textOnLineLen - decorWidth;
+        _textPainter.layout(maxWidth: maxSpaceOnLineForErrMsg);
+        final errBoxWidth =
+          _textPainter.width + decorWidth;
+        final errMsgBoxXOff = (size.width - errBoxWidth) + (errBoxWidth * (1 - prog));
+
+        const corn = Radius.circular(5);
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            Offset(errMsgBoxXOff, err.lineNumber * _lineHeight) &
+            Size(errBoxWidth, _lineHeight),
+            topLeft: corn,
+            bottomLeft: corn
+          ),
+          Paint()..color=Colors.red.shade300.withOpacity(prog)
+        );
+        canvas.drawImageRect(
+          _errSign,
+          Offset.zero &
+          Size(_errSign.width.toDouble(), _errSign.height.toDouble()),
+          Offset(
+            errMsgBoxXOff + leadingErrSignPadding,
+            (err.lineNumber * _lineHeight) + 3) &
+          Size(errSignWH, errSignWH),
+          Paint());
+        final textXOff =
+          errMsgBoxXOff + leadingErrSignPadding + errSignWH + trailingErrSignPadding;
+        _textPainter.paint(
+          canvas,
+          Offset(
+            textXOff,
+            err.lineNumber * _lineHeight)
+        );
+      }
+    }
+    // end of text field
     canvas.drawRect(
       Offset(0, (_lines.length) * _lineHeight) &
       Size(size.width, 1),
       Paint()..color=Colors.blueGrey.shade900);
-
+    // carret
     final carretPaintStyle = Paint()
     ..color=(_carretColor.withOpacity(_carretOpacity));
     final carretOffset = Offset(
@@ -950,4 +1498,8 @@ extension Trisplitting<T> on List<T> {
     final tail = elementAt(length - 1);
     return (first, mid, tail);
   }
+}
+
+extension Spliting on String {
+
 }
